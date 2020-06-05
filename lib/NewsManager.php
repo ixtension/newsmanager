@@ -29,17 +29,6 @@ class NewsManager
             $this->category_id_parameter = UrlGenerator::getId();
         }
     }
-    
-    public static function create() {
-        
-        if (rex_addon::get('newsmanager')->getPlugin('comments')->isAvailable()) {
-            $instance = new NewsManagerWithComments();
-        } else {
-            $instance = new self();
-        }
-        
-        return $instance;
-    }
 
     /**
      * Returns the news id parameter from UrlGenerator
@@ -100,10 +89,8 @@ class NewsManager
         $newsArticle->setStatus($result->getValue('status'));
         $newsArticle->setNewsmanager_category_id($result->getValue('newsmanager_category_id'));
         $newsArticle->setTitle($result->getValue('title'));
-        $newsArticle->setSubtitle($result->getValue('subtitle'));    
         $newsArticle->setRichtext($result->getValue('richtext'));
         $newsArticle->setImages($result->getValue('images'));
-	$newsArticle->setSeo_title($result->getValue('seo_title'));
         $newsArticle->setSeo_description($result->getValue('seo_description'));
         $newsArticle->setSeo_canonical($result->getValue('seo_canonical'));
         $newsArticle->setAuthor($result->getValue('author'));
@@ -208,46 +195,7 @@ class NewsManager
 
         return $newsArticle;
     }
-    
 
-    
-    /**
-     * Generates a list view of the articles from a template (article-teaser-list-view.php)
-     *
-     * @param NewsManagerArticle $newsArticle Article object
-     * @return string markup of the article teaser list view
-     */
-    public function printTeaserListView($singleViewArticleId, $limit = 0)
-    {
-        $TeaserlistView_output = '';
-        $teasernewslist = '';
-
-        $suggestions = array('article-teaser-list-view');
-
-        $posts = $this->getArticleObjectList($limit);
-
-        foreach ($posts as $post) {
-            if ($post instanceof NewsManagerArticle) {
-                $teasernewslist .= $post->printArticleTeaserList($post, $newsArticle);
-            }
-        }
-
-        $TeaserlistView_output .= $this->tpl->render($suggestions, array(
-                     'teasernewslist' => $teasernewslist
-            ));
-
-        return '<ul>'.$TeaserlistView_output.'</ul>';
-    }
-    
-           
-    
-    
-    /**
-     * Generates the list view of the articles from a template (article-list-view.php)
-     *
-     * @param NewsManagerArticle $newsArticle Article object
-     * @return string markup of the article list view
-     */
     public function printListView($singleViewArticleId, $limit = 0)
     {
         $listView_output = '';
@@ -294,29 +242,22 @@ class NewsManager
                 } else {
                     $image = '<div id="images">' . PHP_EOL;
                     foreach ($images as $key => $value) {
-//                        $image .= '<div id="image-' . $key . '" class="image">' . PHP_EOL;
+                        $image .= '<div id="image-' . $key . '" class="image">' . PHP_EOL;
                         $image .= $newsArticle->makeImage($value);
-//                        $image .= '</div>' . PHP_EOL;
+                        $image .= '</div>' . PHP_EOL;
                     }
                     $image .= '</div>' . PHP_EOL;
                 }
             }
             if (strpos($newsArticle->getRichtext(), '<hr>')) {
-//              $richtext_with_image = str_replace('<hr>', $image, $newsArticle->getRichtext());
-                $richtext = str_replace('<hr>', $image, $newsArticle->getRichtext());
+                $richtext_with_image = str_replace('<hr>', $image, $newsArticle->getRichtext());
             } else {
-//              $richtext_with_image = $newsArticle->getRichtext() . $image; // Ausgabe von Text und Bild unabhängig
-                $richtext = $newsArticle->getRichtext();   
+                $richtext_with_image = $newsArticle->getRichtext() . $image;
             }
-            
-$richtext = $newsArticle->getRichtext();
-            
             $output .= $this->tpl->render($suggestions, array(
                 'title' => $newsArticle->getTitle(),
-                'subtitle' => $newsArticle->getSubtitle(),
                 'createdate' => strftime('%A, %e. %B %Y', strtotime($newsArticle->getCreatedate())),
-                'richtext' => $richtext,
-                'image' => $image,
+                'richtext' => $richtext_with_image,
                 'author' => $newsArticle->getAuthor()
             ));
         } else {
@@ -376,7 +317,9 @@ $richtext = $newsArticle->getRichtext();
      */
     private function getPager($total, $limit)
     {
+        $distance = 2; // Wert, der bestimmt wieviele Seiten vor bzw. nach der aktuellen Seite angezeigt werden sollen.
 
+        $last_page_shown = 0;
         $pagemenu = 'pager';
 
         $suggestions = array('article-pager');
@@ -384,31 +327,82 @@ $richtext = $newsArticle->getRichtext();
         $pager = new rex_pager($limit, 'offset');
         $pager->setRowCount($total);
 
-        $pagemenu = '<ul>';
+        $pagemenu = '<ul class="pagination justify-content-center">';
         for ($page = $pager->getFirstPage(); $page <= $pager->getLastPage(); ++$page) {
-            $class = ($pager->isActivePage($page)) ? ' active' : '';
-            if ($this->category_id_parameter) {
-                $pagemenu .= '<li>
-                    <a class="'. $class .'" href="' . rex_getUrl(rex_article::getCurrentId(), '', [$pager->getCursorName() => $pager->getCursor($page), 'category' => $this->category_id_parameter]) . '">' . ($page + 1) . '</a></li>';
-            } else {
-                $pagemenu .= '<li><a class="'. $class .'" href="' . rex_getUrl(rex_article::getCurrentId(), '', [$pager->getCursorName() => $pager->getCursor($page)]) . '">' . ($page + 1) . '</a></li>';
+
+            $show = false;
+            $class = ' page-item '.($page-1).' ' .$last_page_shown;
+            $class.= ($pager->isActivePage($page)) ? ' active' : '';
+            if ($page < $distance) $show = true;
+            if (abs($page - $pager->getCurrentPage()) < $distance) $show = true;
+            if ($page + $distance > $pager->getLastPage()) $show = true;
+            // if (($page+1)%10 == 0) $show = true; // alle 10er Schritte anzeigen
+            if ($show) {
+                if (($page - 1) > $last_page_shown) {
+                    $pagemenu .= '<li class="'. $class . '"><a class="page-link">...</a></li>';
+                }
+
+                if ($this->category_id_parameter) {
+                    $pagemenu .= '<li class="'. $class . '">
+                    <a class="page-link"  href="' . rex_getUrl(rex_article::getCurrentId(), '', [$pager->getCursorName() => $pager->getCursor($page), 'category' => $this->category_id_parameter]) . '">' . ($page + 1) . '</a></li>';
+                } else {
+                    $pagemenu .= '<li class="' . $class . '"><a class="page-link" href="' . rex_getUrl(rex_article::getCurrentId(), '', [$pager->getCursorName() => $pager->getCursor($page)]) . '">' . ($page + 1) . '</a></li>';
+                }
+                $last_page_shown = $page;
             }
         }
 
         $pagemenu .= '</ul>';
 
-        $this->tpl->render($suggestions, array(
+        $pagemenu = $this->tpl->render($suggestions, array(
             'pager' => $pagemenu
         ));
 
         return $pagemenu;
     }
-    
-    public static function getRssHeaderLink() {
-        
-        return '<link rel="alternate" type="application/rss+xml" title="' . rex::getServerName() . ' RSS-Feed" href="' . rex::getServer() . 'rss-feed-' . rex_clang::getCurrent()->getCode() . '.xml" />';
-        
-    }
+
+//  /**
+//   * Generates a pager
+//   *
+//   * @param int $total all article objects in database
+//   * @param int $limit rows per page
+//   * @param int $category_id category id if available
+//   * @return string pager menu markup
+//   */
+//  private function getPager($total, $limit)
+//  {
+
+//      $pagemenu = 'pager';
+
+//      $suggestions = array('article-pager');
+
+//      $pager = new rex_pager($limit, 'offset');
+//      $pager->setRowCount($total);
+
+//      $pagemenu = '<ul>';
+//      for ($page = $pager->getFirstPage(); $page <= $pager->getLastPage(); ++$page) {
+//          if ($this->category_id_parameter) {
+//              $pagemenu .= '<li>
+//                  <a href="' . rex_getUrl(rex_article::getCurrentId(), '', [$pager->getCursorName() => $pager->getCursor($page), 'category' => $this->category_id_parameter]) . '">' . ($page + 1) . '</a></li>';
+//          } else {
+//              $pagemenu .= '<li><a href="' . rex_getUrl(rex_article::getCurrentId(), '', [$pager->getCursorName() => $pager->getCursor($page)]) . '">' . ($page + 1) . '</a></li>';
+//          }
+//      }
+
+//      $pagemenu .= '</ul>';
+
+//      $pagemenu = $this->tpl->render($suggestions, array(
+//          'pager' => $pagemenu
+//      ));
+
+//      return $pagemenu;
+//  }
+//
+//  public static function getRssHeaderLink() {
+//
+//      return '<link rel="alternate" type="application/rss+xml" title="' . rex::getServerName() . ' RSS-Feed" href="' . rex::getServer() . 'rss-feed-' . rex_clang::getCurrent()->getCode() . '.xml" />';
+//
+//  }
     /**
      * Generates a RSS Feed file for all available online languages
      */
